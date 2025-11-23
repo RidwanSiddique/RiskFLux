@@ -1,0 +1,78 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Location {
+  id        String        @id @default(cuid())
+  address   String?
+  latitude  Float
+  longitude Float
+  createdAt DateTime      @default(now())
+  scores    HazardScore[]
+}
+
+model ModelVersion {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  description String
+  configJson  Json
+  createdAt   DateTime      @default(now())
+  scores      HazardScore[]
+}
+
+model HazardScore {
+  id             String                      @id @default(cuid())
+  location       Location                    @relation(fields: [locationId], references: [id])
+  locationId     String
+  modelVersion   ModelVersion                @relation(fields: [modelVersionId], references: [id])
+  modelVersionId String
+  overallScore   Int
+  floodScore     Int
+  stormScore     Int
+  snowScore      Int
+  createdAt      DateTime                    @default(now())
+  factors        HazardFactorContribution[]
+}
+
+model HazardFactorContribution {
+  id            String       @id @default(cuid())
+  hazardScore   HazardScore  @relation(fields: [hazardScoreId], references: [id])
+  hazardScoreId String
+  factorName    String
+  factorValue   Float
+  weight        Float
+  contribution  Float
+}
+
+model KnowledgeBaseArticle {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  category        String
+  contentMarkdown String
+  createdAt       DateTime @default(now())
+}
+
+model Feedback {
+  id                String    @id @default(cuid())
+  userEmail         String?
+  page              String
+  type              String
+  message           String
+  relatedLocationId String?
+  createdAt         DateTime  @default(now())
+  status            String    @default("open")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  ownerName String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
