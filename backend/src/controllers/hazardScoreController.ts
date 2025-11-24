@@ -1,9 +1,10 @@
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import { createHazardScore } from "../services/hazardScoreService";
 import { prisma } from "../db/prismaClient";
+import { AuthRequest } from "../middlewares/authMiddleware";
 
 export async function createHazardScoreHandler(
-    req: Request,
+    req: AuthRequest,
     res: Response,
     next: NextFunction
 ) {
@@ -16,7 +17,11 @@ export async function createHazardScoreHandler(
         .json({ error: "latitude and longitude must be numbers" });
     }
 
-    const result = await createHazardScore({ latitude, longitude, address });
+    if (!req.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const result = await createHazardScore({ latitude, longitude, address, userId: req.userId });
     res.status(201).json(result);
     } catch (err) {
         next(err);
@@ -24,14 +29,19 @@ export async function createHazardScoreHandler(
 }
 
 export async function getHazardScoreHandler(
-    req: Request,
+    req: AuthRequest,
     res: Response,
     next: NextFunction
 ) {
     try {
     const { id } = req.params;
+    
+    if (!req.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const score = await prisma.hazardScore.findUnique({
-        where: { id },
+        where: { id, userId: req.userId },
         include: { factors: true, location: true, modelVersion: true },
     });
 

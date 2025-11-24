@@ -6,10 +6,11 @@ type HazardScoreInput = {
     address?: string;
     latitude: number;
     longitude: number;
+    userId: string;
 };
 
 export async function createHazardScore(input: HazardScoreInput) {
-    const { address, latitude, longitude } = input;
+    const { address, latitude, longitude, userId } = input;
 
     const distance_to_water_km = fakeDistanceToWater(latitude, longitude);
     const elevation_m = fakeElevation(latitude, longitude);
@@ -51,6 +52,7 @@ export async function createHazardScore(input: HazardScoreInput) {
 
     const hazardScore = await prisma.hazardScore.create({
     data: {
+        userId,
         locationId: location.id,
         modelVersionId: modelVersion.id,
         overallScore,

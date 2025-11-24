@@ -5,7 +5,7 @@ const prismaClient_1 = require("../db/prismaClient");
 const modelConfig_1 = require("../config/modelConfig");
 const scoringUtils_1 = require("../utils/scoringUtils");
 async function createHazardScore(input) {
-    const { address, latitude, longitude } = input;
+    const { address, latitude, longitude, userId } = input;
     const distance_to_water_km = fakeDistanceToWater(latitude, longitude);
     const elevation_m = fakeElevation(latitude, longitude);
     const storm_index = fakeStormIndex(latitude, longitude);
@@ -34,6 +34,7 @@ async function createHazardScore(input) {
     });
     const hazardScore = await prismaClient_1.prisma.hazardScore.create({
         data: {
+            userId,
             locationId: location.id,
             modelVersionId: modelVersion.id,
             overallScore,
