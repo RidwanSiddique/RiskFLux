@@ -4,17 +4,69 @@ exports.createHazardScore = createHazardScore;
 const prismaClient_1 = require("../db/prismaClient");
 const modelConfig_1 = require("../config/modelConfig");
 const scoringUtils_1 = require("../utils/scoringUtils");
+const elevationService_1 = require("./elevationService");
+const waterDistanceService_1 = require("./waterDistanceService");
+const climateDataService_1 = require("./climateDataService");
+const floodRiskService_1 = require("./floodRiskService");
+const geocodingService_1 = require("./geocodingService");
+const cacheService_1 = require("./cacheService");
 async function createHazardScore(input) {
     const { address, latitude, longitude, userId } = input;
-    const distance_to_water_km = fakeDistanceToWater(latitude, longitude);
-    const elevation_m = fakeElevation(latitude, longitude);
-    const storm_index = fakeStormIndex(latitude, longitude);
-    const snow_index = fakeSnowIndex(latitude, longitude);
+    // Try to get cached data first
+    let cachedElevation = cacheService_1.locationCache.get(latitude, longitude, "elevation");
+    let cachedWaterDist = cacheService_1.locationCache.get(latitude, longitude, "water_distance");
+    let cachedWeather = cacheService_1.locationCache.get(latitude, longitude, "weather");
+    let cachedFlood = cacheService_1.locationCache.get(latitude, longitude, "flood_index");
+    // Fetch missing data from APIs
+    if (!cachedElevation) {
+        const elevData = await (0, elevationService_1.getElevation)(latitude, longitude);
+        cachedElevation = elevData?.elevation ?? 400;
+        cacheService_1.locationCache.set(latitude, longitude, "elevation", cachedElevation);
+    }
+    if (!cachedWaterDist) {
+        const waterData = await (0, waterDistanceService_1.getDistanceToWater)(latitude, longitude);
+        cachedWaterDist = waterData?.nearestDistance ?? 5;
+        cacheService_1.locationCache.set(latitude, longitude, "water_distance", cachedWaterDist);
+    }
+    if (!cachedWeather) {
+        const climateData = await (0, climateDataService_1.getAccurateClimateData)(latitude, longitude);
+        cachedWeather = {
+            storm_index: climateData?.stormIndex ?? 0.5,
+            snow_index: climateData?.snowIndex ?? 0.3,
+        };
+        cacheService_1.locationCache.set(latitude, longitude, "weather", cachedWeather);
+    }
+    if (!cachedFlood) {
+        const floodData = await (0, floodRiskService_1.calculateFloodRiskIndex)(latitude, longitude);
+        cachedFlood = floodData?.floodIndex ?? 0.2;
+        cacheService_1.locationCache.set(latitude, longitude, "flood_index", cachedFlood);
+    }
+    // Get reverse geocoded address if not provided
+    let finalAddress = address;
+    if (!finalAddress) {
+        const geoData = await (0, geocodingService_1.reverseGeocode)(latitude, longitude);
+        finalAddress = geoData?.address || `${latitude}, ${longitude}`;
+    }
+    const distance_to_water_km = cachedWaterDist;
+    const elevation_m = cachedElevation;
+    const storm_index = cachedWeather.storm_index;
+    const snow_index = cachedWeather.snow_index;
+    const flood_index = cachedFlood;
+    // Log the factors being used
+    console.log("=== HAZARD SCORE CALCULATION ===");
+    console.log(`Location: ${latitude}, ${longitude}`);
+    console.log(`Elevation: ${elevation_m}m`);
+    console.log(`Distance to Water: ${distance_to_water_km}km`);
+    console.log(`Flood Index: ${flood_index.toFixed(2)} (0-1 scale)`);
+    console.log(`Storm Index: ${storm_index} (0-1 scale)`);
+    console.log(`Snow Index: ${snow_index} (0-1 scale)`);
+    console.log("================================");
     const factors = {
         distance_to_water_km,
         elevation_m,
         storm_index,
         snow_index,
+        flood_index,
     };
     const { floodScore, stormScore, snowScore, overallScore, contributions, } = (0, scoringUtils_1.computeHazardScores)(factors, modelConfig_1.baselineModelConfig);
     let modelVersion = await prismaClient_1.prisma.modelVersion.findUnique({
@@ -30,7 +82,7 @@ async function createHazardScore(input) {
         });
     }
     const location = await prismaClient_1.prisma.location.create({
-        data: { address, latitude, longitude },
+        data: { address: finalAddress, latitude, longitude },
     });
     const hazardScore = await prismaClient_1.prisma.hazardScore.create({
         data: {
@@ -57,22 +109,4 @@ async function createHazardScore(input) {
         },
     });
     return hazardScore;
-}
-function fakeDistanceToWater(lat, lon) {
-    return Math.random() * 5;
-}
-function fakeElevation(lat, lon) {
-    return 450 + Math.random() * 100;
-}
-function fakeStormIndex(lat, lon) {
-    const base = Math.abs(lat) > 35 && Math.abs(lat) < 60
-        ? 0.7
-        : 0.3;
-    const noise = (Math.random() - 0.5) * 0.2;
-    return Math.max(0, Math.min(1, base + noise));
-}
-function fakeSnowIndex(lat, lon) {
-    const normalizedLat = Math.min(1, Math.max(0, (Math.abs(lat) - 30) / 30));
-    const noise = (Math.random() - 0.5) * 0.1;
-    return Math.max(0, Math.min(1, normalizedLat + noise));
 }
